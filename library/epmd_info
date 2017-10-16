@@ -1,0 +1,54 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+from re import compile
+
+DOCUMENTATION = '''
+---
+module: epmd_info
+short_description: Collect info about Erlang VMs registered in epmd
+description:
+  - gather facts of running Erlang VM names on remote server
+'''
+
+
+def collect_info(user, re_cmd):
+    procs = []
+    for p in process_iter():
+        pr = dict(pid=p.pid, ppid=p.ppid, name=p.name,
+                  cmdline=' '.join(p.cmdline), username=p.username,
+                  status=str(p.status))
+        if user and pr['username'] != user:
+            continue
+        if re_cmd and not re_cmd.match(pr['cmdline']):
+            continue
+        pr.update(secontext=getpidcon(pr['pid'])[1])
+        procs.append(pr)
+    return procs
+
+
+def main():
+    module = AnsibleModule(
+        argument_spec=dict(
+        ),
+        supports_check_mode=True,
+    )
+
+    result = dict(changed=False, ansible_facts=dict(epmd_names=dict()))
+    re_name = compile(r'name (\S+) at port (\d+)')
+    epmd = module.get_bin_path('epmd')
+    if not epmd:
+        module.exit_json(**result)
+    (rc, out, err) = module.run_command([epmd, '-names'])
+    if rc != 0:
+        # no epmd running
+        module.exit_json(**result)
+    vms = {}
+    for line in out.splitlines():
+        test = re_name.match(line)
+        if test:
+            vms.update({test.group(1): test.group(2)})
+    result['ansible_facts']['epmd_names'].update(vms)
+    module.exit_json(**result)
+
+from ansible.module_utils.basic import *
+main()

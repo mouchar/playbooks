@@ -1,0 +1,8 @@
+---
+- name: Install neccessary tools
+  become: yes
+  gather_facts: no
+  hosts: all
+  tasks:
+      - name: install nmap
+        yum: name=nmap state=latest

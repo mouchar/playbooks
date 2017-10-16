@@ -1,0 +1,61 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+from psutil import process_iter
+from selinux import getpidcon
+from re import compile
+
+DOCUMENTATION = '''
+---
+module: proc_info
+short_description: Collect info about running processes
+description:
+  - gather facts of running processes on a remote host
+options:
+  filter_username:
+    description:
+      - limit gathered facts to processes running under given user account
+    required: false
+  filter_cmd_regex:
+    description:
+      - limit gathered facts to processes whose command line matches
+        given regex
+    required: false
+'''
+
+
+def collect_info(user, re_cmd):
+    procs = []
+    for p in process_iter():
+        pr = dict(pid=p.pid, ppid=p.ppid, name=p.name,
+                  cmdline=' '.join(p.cmdline), username=p.username,
+                  status=str(p.status))
+        if user and pr['username'] != user:
+            continue
+        if re_cmd and not re_cmd.match(pr['cmdline']):
+            continue
+        pr.update(secontext=getpidcon(pr['pid'])[1])
+        procs.append(pr)
+    return procs
+
+
+def main():
+    module = AnsibleModule(
+        argument_spec=dict(
+            filter_username=dict(required=False),
+            filter_cmd_regex=dict(required=False)
+        ),
+        supports_check_mode=True,
+        no_log=True,
+    )
+
+    if module.check_mode:
+        module.exit_json(changed=False)
+    user = module.params['filter_username']
+    re_cmd = compile(module.params['filter_cmd_regex']) if module.params['filter_cmd_regex'] else None
+
+    result = dict(changed=False,
+                  ansible_facts=dict(processes=collect_info(user, re_cmd)))
+    module.exit_json(**result)
+
+from ansible.module_utils.basic import *
+main()
